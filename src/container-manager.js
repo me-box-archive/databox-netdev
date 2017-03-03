@@ -18,7 +18,7 @@ var DATABOX_DEV = process.env.DATABOX_DEV;
 if(DATABOX_DEV == 1) {
 	Config.registryUrl = Config.registryUrl_dev;
 	Config.storeUrl = Config.storeUrl_dev;
-	console.log("Using dev server::", Config);
+	console.log("Using dev server::", Config.registryUrl);
 }
 
 //ARCH to append -arm to the end of a container name if running on arm
@@ -127,7 +127,6 @@ exports.getContainer = getContainer;
 
 exports.initNetworks = function () {
 	return new Promise((resolve, reject) => {
-		console.log('Creating Networks');
 		dockerHelper.listNetworks()
 			.then(networks => {
 				var requiredNets = [
@@ -139,8 +138,6 @@ exports.initNetworks = function () {
 
 				return Promise.all(requiredNets)
 					.then((networks) => {
-						console.log("Networks already exist");
-						//console.log(networks);
 						resolve(networks);
 					})
 					.catch(err => {
@@ -267,6 +264,8 @@ exports.removeContainer = function (cont) {
 					db.deleteSLA(name, false)
 						.then(resolve(info))
 						.catch((err) => reject(err));
+
+					revokeContainerPermissions({'name': name});
 				});
 			});
 	});
@@ -440,11 +439,13 @@ exports.launchArbiter = function () {
 
 
 var DATABOX_LOGSTORE_ENDPOINT = null;
+var DATABOX_LOGSTORE_NAME = "databox-logstore";
 var DATABOX_LOGSTORE_PORT = 8080;
 exports.launchLogStore = function () {
 
 	return new Promise((resolve, reject) => {
-		var name = "databox-logstore" + ARCH;
+		var name = DATABOX_LOGSTORE_NAME + ARCH;
+		var arbiterToken = "";
 		pullImage(name + ":latest")
 			.then(() => {
 				console.log('[' + name + '] Generating Arbiter token and HTTPS cert');
@@ -476,21 +477,80 @@ exports.launchLogStore = function () {
 				return startContainer(logstore);
 			})
 			.then((logstore) => {
-				return dockerHelper.connectToNetwork(logstore, 'databox-driver-net');
+				var proms =  [ dockerHelper.connectToNetwork(logstore, 'databox-driver-net'),
+							   dockerHelper.connectToNetwork(logstore, 'databox-app-net')];
+				return Promise.all(proms);
 			})
-			.then((logstore) => {
+			.then((logstores) => {
 				console.log('[' + name + '] Passing token to Arbiter');
-
+				var logstore = logstores[0];
 				var update = {name: name, key: arbiterToken, type: logstore.type};
-
 				return updateArbiter(update);
 			})
 			.then((logstore) => {
-				DATABOX_LOGSTORE_ENDPOINT = 'https://' + name + ':' + DATABOX_LOGSTORE_PORT;
+				DATABOX_LOGSTORE_ENDPOINT = 'https://' + DATABOX_LOGSTORE_NAME + ':' + DATABOX_LOGSTORE_PORT;
 				resolve(logstore);
 			})
 			.catch((err) => {
 				console.log("Error creating databox-logstore");
+				reject(err);
+			});
+
+	});
+};
+
+var DATABOX_EXPORT_SERVICE_ENDPOINT = null;
+var DATABOX_EXPORT_SERVICE_PORT = 8080;
+exports.launchExportService = function () {
+
+	return new Promise((resolve, reject) => {
+		var name = "databox-export-service" + ARCH;
+		var arbiterToken = "";
+		pullImage(name + ":latest")
+			.then(() => {
+				console.log('[' + name + '] Generating Arbiter token and HTTPS cert');
+				proms = [
+					httpsHelper.createClientCert(name),
+					generateArbiterToken()
+				];
+				return Promise.all(proms);
+			})
+			.then((tokens) => {
+				let httpsPem = tokens[0];
+				arbiterToken = tokens[1];
+				return dockerHelper.createContainer(
+					{
+						'name': name,
+						'Image': Config.registryUrl + '/' + name + ":latest",
+						'PublishAllPorts': true,
+						'Env': [
+									"ARBITER_TOKEN=" + arbiterToken,
+									"CM_HTTPS_CA_ROOT_CERT=" + httpsHelper.getRootCert(),
+									"HTTPS_SERVER_PRIVATE_KEY=" +  httpsPem.clientprivate,
+									"HTTPS_SERVER_CERT=" +  httpsPem.clientcert
+							   ]
+					}
+				);
+			})
+			.then((exportService) => {
+				return startContainer(exportService);
+			})
+			.then((exportService) => {
+				return dockerHelper.connectToNetwork(exportService, 'databox-app-net');
+			})
+			.then((exportService) => {
+				console.log('[' + name + '] Passing token to Arbiter');
+
+				var update = {name: name, key: arbiterToken, type: exportService.type};
+
+				return updateArbiter(update);
+			})
+			.then((exportService) => {
+				DATABOX_EXPORT_SERVICE_ENDPOINT = 'https://' + name + ':' + DATABOX_EXPORT_SERVICE_PORT;
+				resolve(exportService);
+			})
+			.catch((err) => {
+				console.log("Error creating databox-export-service");
 				reject(err);
 			});
 
@@ -607,6 +667,67 @@ var updateArbiter = function (data) {
 };
 exports.updateArbiter = updateArbiter;
 
+var updateContainerPermissions = function (permissions) {
+
+	return new Promise((resolve, reject) => {
+		getContainer(arbiterName)
+			.then((Arbiter) => {
+				return getContainerInfo(Arbiter);
+			})
+			.then((arbiterInfo) => {
+				var options = {
+						url: DATABOX_ARBITER_ENDPOINT + "/cm/grant-container-permissions",
+						method:'POST',
+						form: permissions,
+						agent: arbiterAgent,
+						headers: {
+							'x-api-key': arbiterKey
+						}
+					};
+				request(
+					options,
+					function (err, response, body) {
+						if (err) {
+							reject(err);
+							return;
+						}
+						resolve(JSON.parse(body));
+					});
+			})
+			.catch((err) => reject(err));
+	});
+};
+
+var revokeContainerPermissions = function (permissions) {
+	return new Promise((resolve, reject) => {
+		getContainer(arbiterName)
+			.then((Arbiter) => {
+				return getContainerInfo(Arbiter);
+			})
+			.then((arbiterInfo) => {
+				var options = {
+						url: DATABOX_ARBITER_ENDPOINT + "/cm/delete-container-info",
+						method:'POST',
+						form: permissions,
+						agent: arbiterAgent,
+						headers: {
+							'x-api-key': arbiterKey
+						}
+					};
+				request(
+					options,
+					function (err, response, body) {
+						if (err) {
+							reject(err);
+							return;
+						}
+						resolve();
+					});
+			})
+			.catch((err) => reject(err));
+	});
+};
+
 var launchDependencies = function (containerSLA) {
 	var promises = [];
 	for (var requiredType in containerSLA['resource-requirements']) {
@@ -678,7 +799,8 @@ let launchContainer = function (containerSLA) {
 			"DATABOX_IP=" + ip,
 			"DATABOX_LOCAL_NAME=" + containerSLA.localContainerName,
 			"DATABOX_ARBITER_ENDPOINT=" + DATABOX_ARBITER_ENDPOINT,
-			"DATABOX_LOGSTORE_ENDPOINT=" + DATABOX_LOGSTORE_ENDPOINT + '/' + containerSLA.localContainerName //TODO only expose this to stores 
+			"DATABOX_LOGSTORE_ENDPOINT=" + DATABOX_LOGSTORE_ENDPOINT + '/' + containerSLA.localContainerName, //TODO only expose this to stores 
+			"DATABOX_EXPORT_SERVICE_ENDPOINT=" + DATABOX_EXPORT_SERVICE_ENDPOINT //TODO only expose this to apps
 			//"DATABOX_NOTIFICATIONS_ENDPOINT=" + DATABOX_NOTIFICATIONS_ENDPOINT
 		],
 		'PublishAllPorts': true,
@@ -728,10 +850,18 @@ let launchContainer = function (containerSLA) {
 					}
 					config.Binds = binds;
 				}
-
+				proms = [];
 				if ('datasources' in containerSLA) {
 					for (let datasource of containerSLA.datasources) {
 						config.Env.push("DATASOURCE_" + datasource.clientid + "=" + JSON.stringify(datasource.hypercat));
+						if (datasource.enabled) {
+ 							// Grant read assess to enabled datasources
+							 proms.push(updateContainerPermissions({
+										name: containerSLA.name,
+										route: {target:containerSLA.host, path: containerSLA.api_url, method:'GET'}
+										//caveats: ""
+									}));
+ 						}
 					}
 				}
 
@@ -742,11 +872,12 @@ let launchContainer = function (containerSLA) {
 					}
 				}
 
-				// Create Container
-				return dockerHelper.createContainer(config);
+				// TODO: Separate from other promises
+ 				proms.push(dockerHelper.createContainer(config));
+ 				return Promise.all(proms);
 			})
-			.then((container) => {
-				return startContainer(container);
+			.then((results) => {
+				return startContainer(results[results.length - 1]);
 			})
 			.then((container) => {
 				launched.push(container);
@@ -764,6 +895,46 @@ let launchContainer = function (containerSLA) {
 				return updateArbiter(update);
 			})
 			.then(() => {
+				//grant write access to requested stores
+				var dependentStores = launched.filter((itm)=>{ return itm.type == 'store'; });
+				for(store of dependentStores) {
+
+					if(containerSLA.localContainerName != store.name) {
+
+						console.log('[Adding read permissions] for ' + containerSLA.localContainerName + ' on ' + store.name + '/status');
+						updateContainerPermissions({
+							name: containerSLA.localContainerName,
+							route: {target: store.name, path: '/status', method:'GET'}
+							//caveats: ""
+						})
+						.catch((err)=>{
+							console.log("[ERROR adding permissions for " + name + "] " + err);
+							reject(err);
+						});
+
+						console.log('[Adding write permissions] for ' + containerSLA.localContainerName + ' on ' + store.name);
+						updateContainerPermissions({
+							name: containerSLA.localContainerName,
+							route: {target: store.name, path: '/*', method:'POST'}
+							//caveats: ""
+						})
+						.catch((err)=>{
+							console.log("[ERROR adding permissions for " + name + "] " + err);
+							reject(err);
+						});
+
+						console.log('[Adding write permissions] for ' + containerSLA.localContainerName + ' on ' + DATABOX_LOGSTORE_NAME + '/' + containerSLA.localContainerName);
+						updateContainerPermissions({
+							name: containerSLA.localContainerName,
+							route: {target: DATABOX_LOGSTORE_NAME, path: '/' + containerSLA.localContainerName + '/*', method:'POST'}
+							//caveats: ""
+						})
+						.catch((err)=>{
+							console.log("[ERROR adding permissions for " + name + "] " + err);
+							reject(err);
+						});
+					}
+				}
 				resolve(launched);
 			})
 			.catch((err) => {
