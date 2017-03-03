@@ -607,41 +607,6 @@ var updateArbiter = function (data) {
 };
 exports.updateArbiter = updateArbiter;
 
-var grantContainerPermissions = function (name, route, caveats) {
-	return new Promise((resolve, reject) => {
-		getContainer(arbiterName)
-			.then((Arbiter) => {
-				return getContainerInfo(Arbiter);
-			})
-			.then((arbiterInfo) => {
-				var options = {
-						url: DATABOX_ARBITER_ENDPOINT + "/cm/grant-container-permissions",
-						method:'POST',
-						form: { name, route, caveats },
-						agent: arbiterAgent,
-						headers: {
-							'x-api-key': arbiterKey
-						}
-					};
-				request(
-					options,
-					function (err, response, body) {
-						if (err) {
-							console.error('#####################');
-							console.error(err);
-							reject(err);
-							return;
-						}
-						console.error('######x###############');
-						console.log(body);
-						resolve(JSON.parse(body));
-					});
-			})
-			.catch((err) => reject(err));
-	});
-};
-exports.grantContainerPermissions = grantContainerPermissions;
-
 var launchDependencies = function (containerSLA) {
 	var promises = [];
 	for (var requiredType in containerSLA['resource-requirements']) {
@@ -764,26 +729,9 @@ let launchContainer = function (containerSLA) {
 					config.Binds = binds;
 				}
 
-				proms = [];
-
-				console.log(JSON.stringify(containerSLA, null, '  '));
 				if ('datasources' in containerSLA) {
 					for (let datasource of containerSLA.datasources) {
 						config.Env.push("DATASOURCE_" + datasource.clientid + "=" + JSON.stringify(datasource.hypercat));
-						if (datasource.enabled) {
-							// TODO: WARNING! This is a hack. Containers shouldn't automatically have both read and write access.
-							// See https://github.com/me-box/admin/issues/11#issuecomment-282417079
-							proms.push(grantContainerPermissions(containerSLA.name, {
-								target: containerSLA.host,
-								path:   containerSLA.api_url,
-								method: 'GET'
-							}));
-							proms.push(grantContainerPermissions(containerSLA.name, {
-								target: containerSLA.host,
-								path:   containerSLA.api_url,
-								method: 'POST'
-							}));
-						}
 					}
 				}
 
@@ -795,13 +743,10 @@ let launchContainer = function (containerSLA) {
 				}
 
 				// Create Container
-				// TODO: Separate from other promises
-				proms.push(dockerHelper.createContainer(config));
-
-				return Promise.all(proms);
+				return dockerHelper.createContainer(config);
 			})
-			.then((results) => {
-				return startContainer(results[results.length - 1]);
+			.then((container) => {
+				return startContainer(container);
 			})
 			.then((container) => {
 				launched.push(container);
