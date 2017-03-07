@@ -130,8 +130,8 @@ exports.initNetworks = function () {
 		dockerHelper.listNetworks()
 			.then(networks => {
 				var requiredNets = [
-					dockerHelper.getNetwork(networks, 'databox-driver-net'),
-					dockerHelper.getNetwork(networks, 'databox-app-net'),
+					//dockerHelper.getNetwork(networks, 'databox-driver-net'),
+					//dockerHelper.getNetwork(networks, 'databox-app-net'),
 					dockerHelper.getNetwork(networks, 'databox-cloud-net'),
 					dockerHelper.getNetwork(networks, 'databox-cm-arbiter-net')
 				];
@@ -392,12 +392,12 @@ exports.launchArbiter = function () {
 			.then((Arbiter) => {
 				return startContainer(Arbiter);
 			})
-			.then((Arbiter) => {
-				return dockerHelper.connectToNetwork(Arbiter, 'databox-driver-net');
-			})
-			.then((Arbiter) => {
-				return dockerHelper.connectToNetwork(Arbiter, 'databox-app-net');
-			})
+			// .then((Arbiter) => {
+			// 	return dockerHelper.connectToNetwork(Arbiter, 'databox-driver-net');
+			// })
+			// .then((Arbiter) => {
+			// 	return dockerHelper.connectToNetwork(Arbiter, 'databox-app-net');
+			// })
 			.then((Arbiter) => {
 				return dockerHelper.connectToNetwork(Arbiter, 'databox-cm-arbiter-net');
 			})
@@ -476,11 +476,11 @@ exports.launchLogStore = function () {
 			.then((logstore) => {
 				return startContainer(logstore);
 			})
-			.then((logstore) => {
-				var proms =  [ dockerHelper.connectToNetwork(logstore, 'databox-driver-net'),
-							   dockerHelper.connectToNetwork(logstore, 'databox-app-net')];
-				return Promise.all(proms);
-			})
+			// .then((logstore) => {
+			// 	var proms =  [ dockerHelper.connectToNetwork(logstore, 'databox-driver-net'),
+			// 				   dockerHelper.connectToNetwork(logstore, 'databox-app-net')];
+			// 	return Promise.all(proms);
+			// })
 			.then((logstores) => {
 				console.log('[' + name + '] Passing token to Arbiter');
 				var logstore = logstores[0];
@@ -535,9 +535,9 @@ exports.launchExportService = function () {
 			.then((exportService) => {
 				return startContainer(exportService);
 			})
-			.then((exportService) => {
-				return dockerHelper.connectToNetwork(exportService, 'databox-app-net');
-			})
+			// .then((exportService) => {
+			// 	return dockerHelper.connectToNetwork(exportService, 'databox-app-net');
+			// })
 			.then((exportService) => {
 				console.log('[' + name + '] Passing token to Arbiter');
 
@@ -576,12 +576,12 @@ exports.launchNotifications = function () {
 			.then((notifications) => {
 				return startContainer(notifications);
 			})
-			.then((notifications) => {
-				return dockerHelper.connectToNetwork(notifications, 'databox-driver-net');
-			})
-			.then((notifications) => {
-				return dockerHelper.connectToNetwork(notifications, 'databox-app-net');
-			})
+			// .then((notifications) => {
+			// 	return dockerHelper.connectToNetwork(notifications, 'databox-driver-net');
+			// })
+			// .then((notifications) => {
+			// 	return dockerHelper.connectToNetwork(notifications, 'databox-app-net');
+			// })
 			.then((notifications) => {
 				DATABOX_NOTIFICATIONS_ENDPOINT = 'http://' + notifications.ip + ':' + DATABOX_NOTIFICATIONS_PORT + '/notify';
 				resolve(notifications);
