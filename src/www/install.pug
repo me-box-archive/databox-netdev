@@ -30,7 +30,9 @@ html
 			var manifest = null;
 			var sensors = null;
 			var mappings = {
-				"urn:X-databox:rels:hasDescription": "description",
+				"urn:X-hypercat:rels:hasDescription:en": "description",
+				"urn:X-hypercat:rels:isContentType": "contentType",
+				"urn:X-databox:rels:hasVendor": "vendor",
 				"urn:X-databox:rels:hasType": "type",
 				"urn:X-databox:rels:hasLocation": "location",
 				"urn:X-databox:rels:hasDatasourceid": "id"
@@ -61,7 +63,7 @@ html
 					if ('items' in data) {
 						for (var item of data.items) {
 							var sensor = {};
-							sensor.endpoint = url;
+							sensor.endpoint = item.href;
 							if ('item-metadata' in item) {
 								for (var metadata of item['item-metadata']) {
 									if (metadata.rel in mappings) {
@@ -97,14 +99,18 @@ html
 				}
 			}
 
-			function selectSensor(datasource_id, sensor_index) {
+			function selectSensor(datasource_id, sensor_id) {
 				for (var datasource of manifest.datasources) {
 					if (datasource.clientid === datasource_id) {
 						for (var sensor of sensors) {
-							if (sensor.index === sensor_index) {
+							if (sensor.id === sensor_id) {
+								datasource.datasource = sensor.id;
 								datasource.endpoint = sensor.endpoint;
-								datasource.sensor_id = sensor.id;
-								datasource.sensor = sensor.description + ", " + sensor.location;
+								datasource.description = sensor.description;
+								datasource.location = sensor.location || "";
+								if(sensor.location) {
+									datasource.description +=  ", " + sensor.location
+								}
 								datasource.hypercat = sensor.hypercat;
 								update();
 								return true;

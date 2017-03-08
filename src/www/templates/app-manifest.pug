@@ -86,11 +86,11 @@ div
 							span
 								= datasource.name
 							span.mdl-list__item-sub-title
-								= datasource.sensor || "Unbound"
+								= datasource.description || "Unbound"
 						ul.mdl-menu.mdl-menu--bottom-left.mdl-js-menu.mdl-js-ripple-effect(for='datasource_' + datasource.clientid)
 							each sensor in getSensors(datasource.type)
-								li.mdl-menu__item(onclick='selectSensor("' + datasource.clientid + '",' + sensor.index + ')')
-									= sensor.description + ', ' + sensor.location
+								li.mdl-menu__item(onclick='selectSensor("' + datasource.clientid + '","' + sensor.id + '")')
+									= sensor.description + ', ' + (sensor.location || "")
 							else
 								li.mdl-menu__item(disabled)
 									| No sensors found

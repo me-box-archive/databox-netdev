@@ -5,6 +5,7 @@ var os = require('os');
 var crypto = require('crypto');
 var request = require('request');
 var https = require('https');
+var url = require('url');
 
 var db = require('./include/container-manager-db.js');
 var dockerHelper = require('./include/container-manager-docker-helper.js');
@@ -808,6 +809,60 @@ let launchContainer = function (containerSLA) {
 			'Links': [arbiterName]
 		}
 	};
+
+	//set read permissions from the sla for DATASOURCES. Limit this to Apps only??
+	var readProms = [];
+	if(containerSLA.datasources) {
+		for(var allowedDatasource of containerSLA.datasources) {
+				
+				var datasourceEndpoint = url.parse(allowedDatasource.endpoint);
+				var datasourceName = allowedDatasource.datasource;
+
+				readProms.push(updateContainerPermissions({
+											name: containerSLA.localContainerName,
+											route: {target:datasourceEndpoint.hostname, path: '/'+datasourceName, method:'GET'}
+										}));
+				console.log("read api",{
+											name: containerSLA.localContainerName,
+											route: {target:datasourceEndpoint.hostname, path: '/'+datasourceName, method:'GET'}
+										});
+
+				readProms.push(updateContainerPermissions({
+											name: containerSLA.localContainerName,
+											route: {target:datasourceEndpoint.hostname, path: '/'+datasourceName+'/*', method:'GET'}
+										}));
+				
+				readProms.push(updateContainerPermissions({
+											name: containerSLA.localContainerName,
+											route: {target:datasourceEndpoint.hostname, path: '/ws' , method:'GET'}
+										}));
+				
+				console.log("/ws",{
+											name: containerSLA.localContainerName,
+											route: {target:datasourceEndpoint.hostname, path: '/ws' , method:'GET'}
+										});
+
+				readProms.push(updateContainerPermissions({
+											name: containerSLA.localContainerName,
+											route: {target:datasourceEndpoint.hostname, path: '/sub/' + datasourceName + '/*' , method:'GET'}
+										}));
+				
+				console.log("/sub",{
+											name: containerSLA.localContainerName,
+											route: {target:datasourceEndpoint.hostname, path: '/sub/' + datasourceName + '/*' , method:'GET'}
+										});
+		}
+
+		Promise.all(readProms)
+		.then(()=>{
+			console.log('[Added read permissions for]:' + containerSLA.localContainerName);
+		})
+		.catch((error)=>{
+			//TODO sort out nested promises and think about stopping the install if this fails
+			console.log('[ERROR Adding read permissions for]:' + containerSLA.localContainerName, error);
+		});
+	}
+
 	let launched = [];
 
 	return new Promise((resolve, reject) => {
@@ -901,6 +956,19 @@ let launchContainer = function (containerSLA) {
 
 					if(containerSLA.localContainerName != store.name) {
 
+						//Read /cat for CM
+						console.log('[Adding read permissions] for databox-container-manager on ' + store.name + '/cat');
+						updateContainerPermissions({
+							name: 'databox-container-manager',
+							route: {target: store.name, path: '/cat', method:'GET'}
+							//caveats: ""
+						})
+						.catch((err)=>{
+							console.log("[ERROR adding permissions for " + name + "] " + err);
+							reject(err);
+						});
+
+						//Read /status
 						console.log('[Adding read permissions] for ' + containerSLA.localContainerName + ' on ' + store.name + '/status');
 						updateContainerPermissions({
 							name: containerSLA.localContainerName,
@@ -912,6 +980,7 @@ let launchContainer = function (containerSLA) {
 							reject(err);
 						});
 
+						//Write to all endpoints on dependent store
 						console.log('[Adding write permissions] for ' + containerSLA.localContainerName + ' on ' + store.name);
 						updateContainerPermissions({
 							name: containerSLA.localContainerName,
@@ -923,14 +992,27 @@ let launchContainer = function (containerSLA) {
 							reject(err);
 						});
 
-						console.log('[Adding write permissions] for ' + containerSLA.localContainerName + ' on ' + DATABOX_LOGSTORE_NAME + '/' + containerSLA.localContainerName);
+						//Write to all endpoints on dependent store
+						console.log('[Adding write permissions] for ' + containerSLA.localContainerName + ' on ' + store.name + '/cat');
 						updateContainerPermissions({
 							name: containerSLA.localContainerName,
-							route: {target: DATABOX_LOGSTORE_NAME, path: '/' + containerSLA.localContainerName + '/*', method:'POST'}
+							route: {target: store.name, path: '/cat', method:'POST'}
 							//caveats: ""
 						})
 						.catch((err)=>{
 							console.log("[ERROR adding permissions for " + name + "] " + err);
+							reject(err);
+						});
+
+						//Grant permissions for the store to write to the log
+						console.log('[Adding write permissions] for ' + store.name + ' on ' + DATABOX_LOGSTORE_NAME + '/' + store.name);
+						updateContainerPermissions({
+							name: store.name,
+							route: {target: DATABOX_LOGSTORE_NAME, path: '/' + store.name , method:'POST'}
+							//caveats: ""
+						})
+						.catch((err)=>{
+							console.log("[ERROR adding permissions for " + store.name + "] " + err);
 							reject(err);
 						});
 					}
