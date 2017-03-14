@@ -303,6 +303,9 @@ var connectContainerPair = function (con0, con1) {
 			})
 			.catch((err) => {
 				console.log('[connectContainerPair]: ' + con0 + ' <> ' + con1);
+				if (dedicatedNet) {
+					dedicatedNet.remove();	
+				}
 				reject(err);
 			});
 	});
@@ -1016,6 +1019,13 @@ let launchContainer = function (containerSLA) {
 					}
 				}
 				resolve(launched);
+			})
+			.then(() => {
+				var connectDatasource = (source) => {
+					connectContainerPair(containerSLA.localContainerName, source.name);
+				};
+				
+				return Promise.all(containerSLA.datasources.map(connectDatasource));
 			})
 			.catch((err) => {
 				console.log("[" + name + "] ERROR Launching: " + err);
