@@ -95,8 +95,8 @@ exports.connectToCMArbiterNetwork = function (container) {
 	let proms = [
 		dockerHelper.connectToNetwork(container, 'databox-cm-arbiter-net'),
 		dockerHelper.connectToNetwork(container, 'databox-cloud-net'),
-		dockerHelper.connectToNetwork(container, 'databox-driver-net'),
-		dockerHelper.connectToNetwork(container, 'databox-app-net')
+		//dockerHelper.connectToNetwork(container, 'databox-driver-net'),
+		//dockerHelper.connectToNetwork(container, 'databox-app-net')
 	];
 
 	return Promise.all(proms);
