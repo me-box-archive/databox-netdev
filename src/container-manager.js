@@ -539,8 +539,13 @@ exports.launchLogStore = function () {
 			// 	return Promise.all(proms);
 			// })
 			.then((logstore) => {
-				connectContainerPair(name, arbiterName);
-				return [logstore];
+				return connectContainerPair(name, arbiterName)
+				.then(()=>{
+					return Promise.resolve([logstore]);
+				})
+				.catch((error)=>{
+					console.log("[ERROR] launchLogStore connectContainerPair",error);
+				});
 			})
 			.then((logstores) => {
 				console.log('[' + name + '] Passing token to Arbiter');
@@ -600,8 +605,13 @@ exports.launchExportService = function () {
 			// 	return dockerHelper.connectToNetwork(exportService, 'databox-app-net');
 			// })
 			.then((exportService) => {
-				connectContainerPair(name, arbiterName);
-				return exportService;
+				return connectContainerPair(name, arbiterName)
+				.then(()=>{
+					return Promise.resolve(exportService);
+				})
+				.catch((error)=>{
+					console.log("[ERROR] launchExportService connectContainerPair");
+				});
 			})
 			.then((exportService) => {
 				console.log('[' + name + '] Passing token to Arbiter');
