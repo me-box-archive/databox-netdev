@@ -295,42 +295,35 @@ exports.removeContainer = function (cont) {
 	});
 };
 
-var connectContainerPair = function (con0, con1) {
-
+var connectContainerPair = 	function (con0, con1) {
+	
 	return new Promise((resolve, reject) => {
 		var dedicatedNet;
-
 		dockerHelper.listNetworks()
 			.then((nets) => {
-				let names = [con0 + '-' + con1, con1 + '-' + con0];
+				let names = [con0 + '-' +  con1, con1 + '-' + con0];
 				var existed = nets.filter((v) => { return names.includes(v); });
 
 				if (existed.length > 0) {
-					return docker.getNetwork(existed[0].Id);
+					return dockerHelper.getNetwork(nets,existed[0].Id);
 				} else {
-					let opts = {'Name': names[0], 'Driver': 'bridge'};
-					docker.createNetwork(opts);
-					return docker.getNetwork(opts.Name);
+					return dockerHelper.getNetwork(nets,names[0]);
 				}
 			})
 			.then((net) => {
 				dedicatedNet = net;
-				let proms = [getContainer(con0), getContainer(con1)];
+				let proms = [getContainerByName(con0), getContainerByName(con1)];
 				return Promise.all(proms);
 			})
 			.then((pair) => {
 				let proms = [
-					dockerHelper.connectToNetwork(pair[0], dedicatedNet.Id),
-					dockerHelper.connectToNetwork(pair[1], dedicatedNet.Id)
+					dedicatedNet.connect({'Container':pair[0].id},(err,data)=>{ if(err){reject(err);}else{resolve(data);}}),
+					dedicatedNet.connect({'Container':pair[1].id},(err,data)=>{ if(err){reject(err);}else{resolve(data);}})
 				];
 				return Promise.all(proms);
 			})
 			.catch((err) => {
-				console.log('[connectContainerPair]: ' + con0 + ' <> ' + con1);
-				if (dedicatedNet) {
-					dedicatedNet.remove();	
-				}
-				reject(err);
+				console.log('[ERROR connectContainerPair]: ' + con0 + ' <> ' + con1, err);
 			});
 	});
 };
