@@ -566,6 +566,7 @@ exports.launchLogStore = function () {
 };
 
 var DATABOX_EXPORT_SERVICE_ENDPOINT = null;
+var DATABOX_EXPORT_SERVICE_NAME = null;
 var DATABOX_EXPORT_SERVICE_PORT = 8080;
 exports.launchExportService = function () {
 
@@ -622,6 +623,7 @@ exports.launchExportService = function () {
 			})
 			.then((exportService) => {
 				DATABOX_EXPORT_SERVICE_ENDPOINT = 'https://' + name + ':' + DATABOX_EXPORT_SERVICE_PORT;
+				DATABOX_EXPORT_SERVICE_NAME = name;
 				resolve(exportService);
 			})
 			.catch((err) => {
