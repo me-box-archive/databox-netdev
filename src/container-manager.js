@@ -95,8 +95,8 @@ exports.connectToCMArbiterNetwork = function (container) {
 	let proms = [
 		dockerHelper.connectToNetwork(container, 'databox-cm-arbiter-net'),
 		dockerHelper.connectToNetwork(container, 'databox-cloud-net'),
-		dockerHelper.connectToNetwork(container, 'databox-driver-net'),
-		dockerHelper.connectToNetwork(container, 'databox-app-net')
+		//dockerHelper.connectToNetwork(container, 'databox-driver-net'),
+		//dockerHelper.connectToNetwork(container, 'databox-app-net')
 	];
 
 	return Promise.all(proms);
@@ -134,13 +134,28 @@ var getContainer = function (id) {
 };
 exports.getContainer = getContainer;
 
+var getContainerByName = function (name) {
+	return new Promise((resolve, reject) => {
+		listContainers()
+			.then(containers => {
+				var found = containers.filter((cont)=>{return '/'+name == cont.Names[0];});
+				if(found.length > 0) {
+					resolve(docker.getContainer(found[0].Id));
+				} else {
+					reject("[Error] getContainerByName " + name + " not found");
+				}
+			});
+	});
+};
+exports.getContainerByName = getContainerByName;
+
 exports.initNetworks = function () {
 	return new Promise((resolve, reject) => {
 		dockerHelper.listNetworks()
 			.then(networks => {
 				var requiredNets = [
-					dockerHelper.getNetwork(networks, 'databox-driver-net'),
-					dockerHelper.getNetwork(networks, 'databox-app-net'),
+					//dockerHelper.getNetwork(networks, 'databox-driver-net'),
+					//dockerHelper.getNetwork(networks, 'databox-app-net'),
 					dockerHelper.getNetwork(networks, 'databox-cloud-net'),
 					dockerHelper.getNetwork(networks, 'databox-cm-arbiter-net')
 				];
@@ -280,6 +295,39 @@ exports.removeContainer = function (cont) {
 	});
 };
 
+var connectContainerPair = 	function (con0, con1) {
+	
+	return new Promise((resolve, reject) => {
+		var dedicatedNet;
+		dockerHelper.listNetworks()
+			.then((nets) => {
+				let names = [con0 + '-' +  con1, con1 + '-' + con0];
+				var existed = nets.filter((v) => { return names.includes(v); });
+
+				if (existed.length > 0) {
+					return dockerHelper.getNetwork(nets,existed[0].Id);
+				} else {
+					return dockerHelper.getNetwork(nets,names[0]);
+				}
+			})
+			.then((net) => {
+				dedicatedNet = net;
+				let proms = [getContainerByName(con0), getContainerByName(con1)];
+				return Promise.all(proms);
+			})
+			.then((pair) => {
+				let proms = [
+					dedicatedNet.connect({'Container':pair[0].id},(err,data)=>{ if(err){reject(err);}else{resolve(data);}}),
+					dedicatedNet.connect({'Container':pair[1].id},(err,data)=>{ if(err){reject(err);}else{resolve(data);}})
+				];
+				return Promise.all(proms);
+			})
+			.catch((err) => {
+				console.log('[ERROR connectContainerPair]: ' + con0 + ' <> ' + con1, err);
+			});
+	});
+};
+
 exports.launchLocalAppStore = function() {
 	return new Promise((resolve, reject) => {
 		var name = Config.localAppStoreName + ARCH;
@@ -401,12 +449,12 @@ exports.launchArbiter = function () {
 			.then((Arbiter) => {
 				return startContainer(Arbiter);
 			})
-			.then((Arbiter) => {
-				return dockerHelper.connectToNetwork(Arbiter, 'databox-driver-net');
-			})
-			.then((Arbiter) => {
-				return dockerHelper.connectToNetwork(Arbiter, 'databox-app-net');
-			})
+			// .then((Arbiter) => {
+			// 	return dockerHelper.connectToNetwork(Arbiter, 'databox-driver-net');
+			// })
+			// .then((Arbiter) => {
+			// 	return dockerHelper.connectToNetwork(Arbiter, 'databox-app-net');
+			// })
 			.then((Arbiter) => {
 				return dockerHelper.connectToNetwork(Arbiter, 'databox-cm-arbiter-net');
 			})
@@ -485,10 +533,19 @@ exports.launchLogStore = function () {
 			.then((logstore) => {
 				return startContainer(logstore);
 			})
+			// .then((logstore) => {
+			// 	var proms =  [ dockerHelper.connectToNetwork(logstore, 'databox-driver-net'),
+			// 				   dockerHelper.connectToNetwork(logstore, 'databox-app-net')];
+			// 	return Promise.all(proms);
+			// })
 			.then((logstore) => {
-				var proms =  [ dockerHelper.connectToNetwork(logstore, 'databox-driver-net'),
-							   dockerHelper.connectToNetwork(logstore, 'databox-app-net')];
-				return Promise.all(proms);
+				return connectContainerPair(name, arbiterName)
+				.then(()=>{
+					return Promise.resolve([logstore]);
+				})
+				.catch((error)=>{
+					console.log("[ERROR] launchLogStore connectContainerPair",error);
+				});
 			})
 			.then((logstores) => {
 				console.log('[' + name + '] Passing token to Arbiter');
@@ -509,6 +566,7 @@ exports.launchLogStore = function () {
 };
 
 var DATABOX_EXPORT_SERVICE_ENDPOINT = null;
+var DATABOX_EXPORT_SERVICE_NAME = null;
 var DATABOX_EXPORT_SERVICE_PORT = 8080;
 exports.launchExportService = function () {
 
@@ -544,8 +602,17 @@ exports.launchExportService = function () {
 			.then((exportService) => {
 				return startContainer(exportService);
 			})
+			// .then((exportService) => {
+			// 	return dockerHelper.connectToNetwork(exportService, 'databox-app-net');
+			// })
 			.then((exportService) => {
-				return dockerHelper.connectToNetwork(exportService, 'databox-app-net');
+				return connectContainerPair(name, arbiterName)
+				.then(()=>{
+					return Promise.resolve(exportService);
+				})
+				.catch((error)=>{
+					console.log("[ERROR] launchExportService connectContainerPair");
+				});
 			})
 			.then((exportService) => {
 				console.log('[' + name + '] Passing token to Arbiter');
@@ -556,6 +623,7 @@ exports.launchExportService = function () {
 			})
 			.then((exportService) => {
 				DATABOX_EXPORT_SERVICE_ENDPOINT = 'https://' + name + ':' + DATABOX_EXPORT_SERVICE_PORT;
+				DATABOX_EXPORT_SERVICE_NAME = name;
 				resolve(exportService);
 			})
 			.catch((err) => {
@@ -585,12 +653,12 @@ exports.launchNotifications = function () {
 			.then((notifications) => {
 				return startContainer(notifications);
 			})
-			.then((notifications) => {
-				return dockerHelper.connectToNetwork(notifications, 'databox-driver-net');
-			})
-			.then((notifications) => {
-				return dockerHelper.connectToNetwork(notifications, 'databox-app-net');
-			})
+			// .then((notifications) => {
+			// 	return dockerHelper.connectToNetwork(notifications, 'databox-driver-net');
+			// })
+			// .then((notifications) => {
+			// 	return dockerHelper.connectToNetwork(notifications, 'databox-app-net');
+			// })
 			.then((notifications) => {
 				DATABOX_NOTIFICATIONS_ENDPOINT = 'http://' + notifications.ip + ':' + DATABOX_NOTIFICATIONS_PORT + '/notify';
 				resolve(notifications);
@@ -823,6 +891,7 @@ let launchContainer = function (containerSLA) {
 	if(containerSLA.datasources) {
 		for(var allowedDatasource of containerSLA.datasources) {
 				
+				
 				var datasourceEndpoint = url.parse(allowedDatasource.endpoint);
 				var datasourceName = allowedDatasource.datasource;
 
@@ -906,12 +975,13 @@ let launchContainer = function (containerSLA) {
 					config.Binds = binds;
 				}
 				proms = [];
+				
 				if ('datasources' in containerSLA) {
 					for (let datasource of containerSLA.datasources) {
 						config.Env.push("DATASOURCE_" + datasource.clientid + "=" + JSON.stringify(datasource.hypercat));
 						if (datasource.enabled) {
  							// Grant read assess to enabled datasources
-							 proms.push(updateContainerPermissions({
+							proms.push(updateContainerPermissions({
 										name: containerSLA.name,
 										route: {target:containerSLA.host, path: containerSLA.api_url, method:'GET'}
 										//caveats: ""
@@ -934,27 +1004,62 @@ let launchContainer = function (containerSLA) {
 			.then((results) => {
 				return startContainer(results[results.length - 1]);
 			})
+			// .then((container) => {
+			// 	launched.push(container);
+			// 	if (container.type == 'driver') {
+			// 		return configureDriver(container);
+			// 	} else if (container.type == 'store') {
+			// 		return configureStore(container);
+			// 	} else {
+			// 		return configureApp(container);
+			// 	}
+			// })
 			.then((container) => {
 				launched.push(container);
-				if (container.type == 'driver') {
-					return configureDriver(container);
-				} else if (container.type == 'store') {
-					return configureStore(container);
-				} else {
-					return configureApp(container);
-				}
-			})
-			.then((container) => {
 				console.log('[' + containerSLA.localContainerName + '] Passing token to Arbiter');
 				var update = {name: containerSLA.localContainerName, key: arbiterToken, type: container.type};
 				return updateArbiter(update);
 			})
 			.then(() => {
+				proms = [
+					connectContainerPair(containerSLA.localContainerName, arbiterName),
+					connectContainerPair(containerSLA.localContainerName, 'databox-cm'),
+					connectContainerPair(containerSLA.localContainerName, DATABOX_LOGSTORE_NAME),
+					connectContainerPair(containerSLA.localContainerName, DATABOX_EXPORT_SERVICE_NAME)
+				];
+
+				//link network for datasource stores
+				if(containerSLA.datasources) {
+					console.log("[Linking network for datasource stores]",containerSLA.datasources);
+					var connectDatasource = (source) => {
+						var datastoreHostName = url.parse(source.endpoint).hostname;
+						console.log("[launch connecting network]", containerSLA.localContainerName, datastoreHostName);
+						return connectContainerPair(containerSLA.localContainerName, datastoreHostName);
+					};
+					proms.push(containerSLA.datasources.map(connectDatasource));
+				}
+
+				return Promise.all(proms);
+			})
+			.then(() => {
+
 				//grant write access to requested stores
 				var dependentStores = launched.filter((itm)=>{ return itm.type == 'store'; });
 				for(store of dependentStores) {
 
 					if(containerSLA.localContainerName != store.name) {
+
+						console.log('[Adding networks] for ' + store.name);
+						connectContainerPair(containerSLA.localContainerName, store.name)
+						.catch((err)=>{
+							console.log("[ERROR Adding network " + containerSLA.localContainerName + "] " + store.name + ' ' + err);
+							reject(err);
+						});
+						connectContainerPair(store.name, DATABOX_LOGSTORE_NAME)
+						.catch((err)=>{
+							console.log("[ERROR Adding network " + containerSLA.localContainerName + "] " + store.name + ' ' + err);
+							reject(err);
+						});
 
 						//Read /cat for CM
 						console.log('[Adding read permissions] for databox-container-manager on ' + store.name + '/cat');
@@ -1047,14 +1152,15 @@ var saveSLA = function (sla) {
 exports.saveSLA = saveSLA;
 
 exports.restoreContainers = function (slas) {
+	slas = slas.reverse();
 	return new Promise((resolve, reject)=> {
 		var infos = [];
 		var result = Promise.resolve();
-		slas.forEach(sla => {
+		slas.forEach((sla) => {
 			console.log("Launching Container:: " + sla.name);
 			result = result.then((info) => {
 				infos.push(info);
-				return launchContainer(sla);
+				return launchContainer(sla)
 			});
 		});
 		result = result.then((info)=> {
