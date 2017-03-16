@@ -134,6 +134,21 @@ var getContainer = function (id) {
 };
 exports.getContainer = getContainer;
 
+var getContainerByName = function (name) {
+	return new Promise((resolve, reject) => {
+		listContainers()
+			.then(containers => {
+				var found = containers.filter((cont)=>{return '/'+name == cont.Names[0];});
+				if(found.length > 0) {
+					resolve(docker.getContainer(found[0].Id));
+				} else {
+					reject("[Error] getContainerByName " + name + " not found");
+				}
+			});
+	});
+};
+exports.getContainerByName = getContainerByName;
+
 exports.initNetworks = function () {
 	return new Promise((resolve, reject) => {
 		dockerHelper.listNetworks()
