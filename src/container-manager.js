@@ -891,6 +891,7 @@ let launchContainer = function (containerSLA) {
 	if(containerSLA.datasources) {
 		for(var allowedDatasource of containerSLA.datasources) {
 				
+				
 				var datasourceEndpoint = url.parse(allowedDatasource.endpoint);
 				var datasourceName = allowedDatasource.datasource;
 
@@ -974,6 +975,7 @@ let launchContainer = function (containerSLA) {
 					config.Binds = binds;
 				}
 				proms = [];
+				
 				if ('datasources' in containerSLA) {
 					for (let datasource of containerSLA.datasources) {
 						config.Env.push("DATASOURCE_" + datasource.clientid + "=" + JSON.stringify(datasource.hypercat));
@@ -984,7 +986,6 @@ let launchContainer = function (containerSLA) {
 										route: {target:containerSLA.host, path: containerSLA.api_url, method:'GET'}
 										//caveats: ""
 									}));
-							proms.push(connectContainerPair(containerSLA.name, containerSLA.host));
  						}
 					}
 				}
@@ -1014,23 +1015,51 @@ let launchContainer = function (containerSLA) {
 			// 	}
 			// })
 			.then((container) => {
+				launched.push(container);
 				console.log('[' + containerSLA.localContainerName + '] Passing token to Arbiter');
 				var update = {name: containerSLA.localContainerName, key: arbiterToken, type: container.type};
 				return updateArbiter(update);
 			})
 			.then(() => {
-				connectContainerPair(containerSLA.localContainerName, arbiterName);
+				proms = [
+					connectContainerPair(containerSLA.localContainerName, arbiterName),
+					connectContainerPair(containerSLA.localContainerName, 'databox-cm'),
+					connectContainerPair(containerSLA.localContainerName, DATABOX_LOGSTORE_NAME),
+					connectContainerPair(containerSLA.localContainerName, DATABOX_EXPORT_SERVICE_NAME)
+				];
+
+				//link network for datasource stores
+				if(containerSLA.datasources) {
+					console.log("[Linking network for datasource stores]",containerSLA.datasources);
+					var connectDatasource = (source) => {
+						var datastoreHostName = url.parse(source.endpoint).hostname;
+						console.log("[launch connecting network]", containerSLA.localContainerName, datastoreHostName);
+						return connectContainerPair(containerSLA.localContainerName, datastoreHostName);
+					};
+					proms.push(containerSLA.datasources.map(connectDatasource));
+				}
+
+				return Promise.all(proms);
 			})
 			.then(() => {
+
 				//grant write access to requested stores
 				var dependentStores = launched.filter((itm)=>{ return itm.type == 'store'; });
 				for(store of dependentStores) {
 
 					if(containerSLA.localContainerName != store.name) {
 
-						connectContainerPair('databox-container-manager', store.name);
-						connectContainerPair(containerSLA.localContainerName, store.name);
-						connectContainerPair(store.name, DATABOX_LOGSTORE_NAME);
+						console.log('[Adding networks] for ' + store.name);
+						connectContainerPair(containerSLA.localContainerName, store.name)
+						.catch((err)=>{
+							console.log("[ERROR Adding network " + containerSLA.localContainerName + "] " + store.name + ' ' + err);
+							reject(err);
+						});
+						connectContainerPair(store.name, DATABOX_LOGSTORE_NAME)
+						.catch((err)=>{
+							console.log("[ERROR Adding network " + containerSLA.localContainerName + "] " + store.name + ' ' + err);
+							reject(err);
+						});
 
 						//Read /cat for CM
 						console.log('[Adding read permissions] for databox-container-manager on ' + store.name + '/cat');
@@ -1106,13 +1135,6 @@ let launchContainer = function (containerSLA) {
 					}
 				}
 				resolve(launched);
-			})
-			.then(() => {
-				var connectDatasource = (source) => {
-					connectContainerPair(containerSLA.localContainerName, source.name);
-				};
-				
-				return Promise.all(containerSLA.datasources.map(connectDatasource));
 			})
 			.catch((err) => {
 				console.log("[" + name + "] ERROR Launching: " + err);
