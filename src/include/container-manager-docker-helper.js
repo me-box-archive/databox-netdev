@@ -62,18 +62,19 @@ var listNetworks = function() {
 exports.listNetworks = listNetworks;
 
 var getNetwork = function(networks, name) {
+
   return new Promise( (resolve, reject) =>  {
     for(i in networks) {
           var net = networks[i];
           if(net.Name === name) {
             var n = docker.getNetwork(net.Id)
-            resolve(n)
+            resolve(n);
             return;
           }
       }
 
       docker.createNetwork({'Name': name, 'Driver': 'bridge'}, (err,data) => {
-        if(err) reject("[getNetwork] Can't create networks")
+        if(err) reject("[getNetwork] Can't create network" + err);
         resolve(data);
       })
   });
@@ -83,7 +84,6 @@ exports.getNetwork = getNetwork;
 
 exports.connectToNetwork = function (container, networkName) {
   return new Promise( (resolve, reject) =>  {
-    console.log('[' + container.name + '] Connecting to ' + networkName);
     listNetworks({})
     .then( (nets) => { return getNetwork(nets,networkName)})
     .then( (net) => {

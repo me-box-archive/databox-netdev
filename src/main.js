@@ -87,7 +87,7 @@ httpsHelper.init()
 
 	.then(()=>{
 		//launch databox components 
-		var proms = [conman.launchLogStore(),conman.launchExportService()];
+		var proms = [conman.launchLogStore(), conman.launchExportService()];
 		return Promise.all(proms);
 	})
 	
