@@ -1152,14 +1152,15 @@ var saveSLA = function (sla) {
 exports.saveSLA = saveSLA;
 
 exports.restoreContainers = function (slas) {
+	slas = slas.reverse();
 	return new Promise((resolve, reject)=> {
 		var infos = [];
 		var result = Promise.resolve();
-		slas.forEach(sla => {
+		slas.forEach((sla) => {
 			console.log("Launching Container:: " + sla.name);
 			result = result.then((info) => {
 				infos.push(info);
-				return launchContainer(sla);
+				return launchContainer(sla)
 			});
 		});
 		result = result.then((info)=> {
