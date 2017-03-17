@@ -288,10 +288,31 @@ exports.removeContainer = function (cont) {
 						reject(err);
 						return;
 					}
-					var name = repoTagToName(info.Name);
-					//console.log("removed " + name + "!");
-					//console.log("[SLA] Delete " + name);
-					resolve(info);
+					const name = repoTagToName(info.Name);
+					dockerHelper.listNetworks()
+						.then((nets) => {
+							const connected = nets.filter((v) => {
+								return v.Name.includes(name);
+							});
+							let proms = [];
+							for (const net of connected) {
+								const network = dockerHelper.getNetwork(connected, net.Name);
+								console.log(net.Name + " :" + network.inspect());
+								proms.push(new Promise((resolve, reject) => {
+									network.remove({}, (err, data) => {
+										if (err) {
+											reject(err);
+										} else {
+											resolve(data);
+										}
+									});
+								}));
+							}
+
+							return Promise.all(proms);
+						});
+
+
 					db.deleteSLA(name, false)
 						.then(resolve(info))
 						.catch((err) => reject(err));
@@ -303,13 +324,13 @@ exports.removeContainer = function (cont) {
 };
 
 var connectContainerPair = 	function (con0, con1) {
-	
+	console.log("Adding network for " + con0 + ' & ' +  con1);
 	return new Promise((resolve, reject) => {
-		var dedicatedNet;
+		let dedicatedNet;
 		dockerHelper.listNetworks()
 			.then((nets) => {
-				let names = [con0 + '-' +  con1, con1 + '-' + con0];
-				var existed = nets.filter((v) => { return names.includes(v); });
+				const names = [con0 + '-' +  con1, con1 + '-' + con0];
+				const existed = nets.filter((v) => { return names.includes(v); });
 
 				if (existed.length > 0) {
 					return dockerHelper.getNetwork(nets,existed[0].Id);
@@ -331,6 +352,7 @@ var connectContainerPair = 	function (con0, con1) {
 			})
 			.catch((err) => {
 				console.log('[ERROR connectContainerPair]: ' + con0 + ' <> ' + con1, err);
+				console.log(err.stack);
 			});
 	});
 };
@@ -968,7 +990,7 @@ let launchContainer = function (containerSLA) {
 					config.Binds = binds;
 				}
 				proms = [];
-				
+
 				if ('datasources' in containerSLA) {
 					for (let datasource of containerSLA.datasources) {
 						config.Env.push("DATASOURCE_" + datasource.clientid + "=" + JSON.stringify(datasource.hypercat));
@@ -995,31 +1017,43 @@ let launchContainer = function (containerSLA) {
  				return Promise.all(proms);
 			})
 			.then((results) => {
-				proms = [
-					connectContainerPair(containerSLA.localContainerName, arbiterName),
-					connectContainerPair(containerSLA.localContainerName, 'databox-cm'),
-					connectContainerPair(containerSLA.localContainerName, DATABOX_LOGSTORE_NAME),
-					connectContainerPair(containerSLA.localContainerName, DATABOX_EXPORT_SERVICE_NAME)
-				];
+				connectContainerPair(containerSLA.localContainerName, arbiterName)
+					.catch((err) => {
+						console.log("[ERROR Adding network " + containerSLA.localContainerName + "] " + arbiterName.name + ' ' + err);
+						reject(err);
+					});
+				connectContainerPair(containerSLA.localContainerName, 'databox-cm')
+					.catch((err) => {
+						console.log("[ERROR Adding network " + containerSLA.localContainerName + "] databox-cm " + err);
+						reject(err);
+					});
+				connectContainerPair(containerSLA.localContainerName, DATABOX_LOGSTORE_NAME)
+					.catch((err) => {
+						console.log("[ERROR Adding network " + containerSLA.localContainerName + "] " + DATABOX_LOGSTORE_NAME + ' ' + err);
+						reject(err);
+					});
+				connectContainerPair(containerSLA.localContainerName, DATABOX_EXPORT_SERVICE_NAME)
+					.catch((err) => {
+						console.log("[ERROR Adding network " + containerSLA.localContainerName + "] " + DATABOX_EXPORT_SERVICE_NAME + ' ' + err);
+						reject(err);
+					});
 
 				//link network for datasource stores
 				if(containerSLA.datasources) {
 					console.log("[Linking network for datasource stores]",containerSLA.datasources);
-					const connectDatasource = (source) => {
+					for(source of containerSLA.datasources) {
 						if(source.endpoint) {
 							const datastoreHostName = url.parse(source.endpoint).hostname;
 							console.log("[launch connecting network]", containerSLA.localContainerName, datastoreHostName);
-							return connectContainerPair(containerSLA.localContainerName, datastoreHostName);
+							connectContainerPair(containerSLA.localContainerName, datastoreHostName)
+								.catch((err) => {
+									console.log("[ERROR Adding network " + containerSLA.localContainerName + "] " + datastoreHostName + ' ' + err);
+									reject(err);
+								});
 						}
-					};
-					proms.push(containerSLA.datasources.map(connectDatasource));
+					}
 				}
-				
-				proms.push(Promise.resolve(results[results.length - 1]));
 
-				return Promise.all(proms);
-			})
-			.then((results) => {
 				return startContainer(results[results.length - 1]);
 			})
 			.then((container) => {
@@ -1033,9 +1067,7 @@ let launchContainer = function (containerSLA) {
 				//grant write access to requested stores
 				var dependentStores = launched.filter((itm)=>{ return itm.type == 'store'; });
 				for(store of dependentStores) {
-
 					if(containerSLA.localContainerName != store.name) {
-
 						console.log('[Adding networks] for ' + store.name);
 						connectContainerPair(containerSLA.localContainerName, store.name)
 						.catch((err)=>{
@@ -1125,6 +1157,7 @@ let launchContainer = function (containerSLA) {
 			})
 			.catch((err) => {
 				console.log("[" + name + "] ERROR Launching: " + err);
+				console.log(err.stack);
 				reject(err);
 			});
 	});
