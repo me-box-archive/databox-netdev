@@ -882,10 +882,21 @@ let launchContainer = function (containerSLA) {
 	//set read permissions from the sla for DATASOURCES. Limit this to Apps only??
 	let readProms = [];
 	if(containerSLA.datasources) {
-		for(let allowedDatasource of containerSLA.datasources) {
+
+    for(let allowedDatasource of containerSLA.datasources) {
 			if(allowedDatasource.endpoint) {
 				let datasourceEndpoint = url.parse(allowedDatasource.endpoint);
 				let datasourceName = allowedDatasource.datasource;
+
+				var isActuator = allowedDatasource.hypercat['item-metadata'].findIndex((itm)=>{return (itm.rel === 'urn:X-databox:rels:isActuator') && (itm.val === true) ; });
+			
+				if(isActuator !== -1) {
+					//its an actuator we need write access
+					readProms.push(updateContainerPermissions({
+											name: containerSLA.localContainerName,
+											route: {target:datasourceEndpoint.hostname, path: '/'+datasourceName+'/*', method:'POST'}
+										}));
+				}
 
 				readProms.push(updateContainerPermissions({
 					name: containerSLA.localContainerName,
@@ -1083,6 +1094,29 @@ let launchContainer = function (containerSLA) {
 							console.log("[ERROR adding permissions for " + name + "] " + err);
 							reject(err);
 						});
+
+						console.log('[Adding read permissions] for ' + containerSLA.localContainerName + ' on ' + store.name + '/sub/*');
+						updateContainerPermissions({
+							name: containerSLA.localContainerName,
+							route: {target: store.name, path: '/sub/*', method:'GET'}
+							//caveats: ""
+						})
+						.catch((err)=>{
+							console.log("[ERROR adding permissions for " + name + "] " + err);
+							reject(err);
+						});
+
+						console.log('[Adding read permissions] for ' + containerSLA.localContainerName + ' on ' + store.name + '/unsub/*');
+						updateContainerPermissions({
+							name: containerSLA.localContainerName,
+							route: {target: store.name, path: '/unsub/*', method:'GET'}
+							//caveats: ""
+						})
+						.catch((err)=>{
+							console.log("[ERROR adding permissions for " + name + "] " + err);
+							reject(err);
+						});
+
 
 						//Write to all endpoints on dependent store
 						console.log('[Adding write permissions] for ' + containerSLA.localContainerName + ' on ' + store.name);
