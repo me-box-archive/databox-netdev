@@ -19,7 +19,14 @@ var DATABOX_DEV = process.env.DATABOX_DEV;
 if(DATABOX_DEV == 1) {
 	Config.registryUrl = Config.registryUrl_dev;
 	Config.storeUrl = Config.storeUrl_dev;
-	console.log("Using dev server::", Config.registryUrl);
+	console.log("Using dev regestry::", Config.registryUrl);
+}
+
+var DATABOX_SDK = process.env.DATABOX_SDK;
+if(DATABOX_SDK == 1) {
+	Config.registryUrl = Config.registryUrl_sdk;
+	Config.storeUrl = Config.storeUrl_sdk;
+	console.log("Using sdk registery::", Config.registryUrl);
 }
 
 //ARCH to append -arm to the end of a container name if running on arm
@@ -449,12 +456,6 @@ exports.launchArbiter = function () {
 			.then((Arbiter) => {
 				return startContainer(Arbiter);
 			})
-			// .then((Arbiter) => {
-			// 	return dockerHelper.connectToNetwork(Arbiter, 'databox-driver-net');
-			// })
-			// .then((Arbiter) => {
-			// 	return dockerHelper.connectToNetwork(Arbiter, 'databox-app-net');
-			// })
 			.then((Arbiter) => {
 				return dockerHelper.connectToNetwork(Arbiter, 'databox-cm-arbiter-net');
 			})
@@ -533,11 +534,6 @@ exports.launchLogStore = function () {
 			.then((logstore) => {
 				return startContainer(logstore);
 			})
-			// .then((logstore) => {
-			// 	var proms =  [ dockerHelper.connectToNetwork(logstore, 'databox-driver-net'),
-			// 				   dockerHelper.connectToNetwork(logstore, 'databox-app-net')];
-			// 	return Promise.all(proms);
-			// })
 			.then((logstore) => {
 				return connectContainerPair(name, arbiterName)
 				.then(()=>{
@@ -600,12 +596,6 @@ exports.launchExportService = function () {
 				);
 			})
 			.then((exportService) => {
-				return startContainer(exportService);
-			})
-			// .then((exportService) => {
-			// 	return dockerHelper.connectToNetwork(exportService, 'databox-app-net');
-			// })
-			.then((exportService) => {
 				return connectContainerPair(name, arbiterName)
 				.then(()=>{
 					return Promise.resolve(exportService);
@@ -613,6 +603,9 @@ exports.launchExportService = function () {
 				.catch((error)=>{
 					console.log("[ERROR] launchExportService connectContainerPair");
 				});
+			})
+			.then((exportService) => {
+				return startContainer(exportService);
 			})
 			.then((exportService) => {
 				console.log('[' + name + '] Passing token to Arbiter');
@@ -1002,25 +995,6 @@ let launchContainer = function (containerSLA) {
  				return Promise.all(proms);
 			})
 			.then((results) => {
-				return startContainer(results[results.length - 1]);
-			})
-			// .then((container) => {
-			// 	launched.push(container);
-			// 	if (container.type == 'driver') {
-			// 		return configureDriver(container);
-			// 	} else if (container.type == 'store') {
-			// 		return configureStore(container);
-			// 	} else {
-			// 		return configureApp(container);
-			// 	}
-			// })
-			.then((container) => {
-				launched.push(container);
-				console.log('[' + containerSLA.localContainerName + '] Passing token to Arbiter');
-				var update = {name: containerSLA.localContainerName, key: arbiterToken, type: container.type};
-				return updateArbiter(update);
-			})
-			.then(() => {
 				proms = [
 					connectContainerPair(containerSLA.localContainerName, arbiterName),
 					connectContainerPair(containerSLA.localContainerName, 'databox-cm'),
@@ -1038,8 +1012,19 @@ let launchContainer = function (containerSLA) {
 					};
 					proms.push(containerSLA.datasources.map(connectDatasource));
 				}
+				
+				proms.push(Promise.resolve(results[results.length - 1]));
 
 				return Promise.all(proms);
+			})
+			.then((results) => {
+				return startContainer(results[results.length - 1]);
+			})
+			.then((container) => {
+				launched.push(container);
+				console.log('[' + containerSLA.localContainerName + '] Passing token to Arbiter');
+				var update = {name: containerSLA.localContainerName, key: arbiterToken, type: container.type};
+				return updateArbiter(update);
 			})
 			.then(() => {
 
