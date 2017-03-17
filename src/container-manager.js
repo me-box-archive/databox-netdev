@@ -1005,10 +1005,12 @@ let launchContainer = function (containerSLA) {
 				//link network for datasource stores
 				if(containerSLA.datasources) {
 					console.log("[Linking network for datasource stores]",containerSLA.datasources);
-					var connectDatasource = (source) => {
-						var datastoreHostName = url.parse(source.endpoint).hostname;
-						console.log("[launch connecting network]", containerSLA.localContainerName, datastoreHostName);
-						return connectContainerPair(containerSLA.localContainerName, datastoreHostName);
+					const connectDatasource = (source) => {
+						if(source.endpoint) {
+							const datastoreHostName = url.parse(source.endpoint).hostname;
+							console.log("[launch connecting network]", containerSLA.localContainerName, datastoreHostName);
+							return connectContainerPair(containerSLA.localContainerName, datastoreHostName);
+						}
 					};
 					proms.push(containerSLA.datasources.map(connectDatasource));
 				}
