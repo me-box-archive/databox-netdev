@@ -880,38 +880,38 @@ let launchContainer = function (containerSLA) {
 	};
 
 	//set read permissions from the sla for DATASOURCES. Limit this to Apps only??
-	var readProms = [];
+	let readProms = [];
 	if(containerSLA.datasources) {
-		for(var allowedDatasource of containerSLA.datasources) {
-				
-				
-				var datasourceEndpoint = url.parse(allowedDatasource.endpoint);
-				var datasourceName = allowedDatasource.datasource;
+		for(let allowedDatasource of containerSLA.datasources) {
+			if(allowedDatasource.endpoint) {
+				let datasourceEndpoint = url.parse(allowedDatasource.endpoint);
+				let datasourceName = allowedDatasource.datasource;
 
 				readProms.push(updateContainerPermissions({
-											name: containerSLA.localContainerName,
-											route: {target:datasourceEndpoint.hostname, path: '/status', method:'GET'}
-										}));
+					name: containerSLA.localContainerName,
+					route: {target: datasourceEndpoint.hostname, path: '/status', method: 'GET'}
+				}));
 
 				readProms.push(updateContainerPermissions({
-											name: containerSLA.localContainerName,
-											route: {target:datasourceEndpoint.hostname, path: '/'+datasourceName, method:'GET'}
-										}));
+					name: containerSLA.localContainerName,
+					route: {target: datasourceEndpoint.hostname, path: '/' + datasourceName, method: 'GET'}
+				}));
 
 				readProms.push(updateContainerPermissions({
-											name: containerSLA.localContainerName,
-											route: {target:datasourceEndpoint.hostname, path: '/'+datasourceName+'/*', method:'GET'}
-										}));
-				
+					name: containerSLA.localContainerName,
+					route: {target: datasourceEndpoint.hostname, path: '/' + datasourceName + '/*', method: 'GET'}
+				}));
+
 				readProms.push(updateContainerPermissions({
-											name: containerSLA.localContainerName,
-											route: {target:datasourceEndpoint.hostname, path: '/ws' , method:'GET'}
-										}));
-										
+					name: containerSLA.localContainerName,
+					route: {target: datasourceEndpoint.hostname, path: '/ws', method: 'GET'}
+				}));
+
 				readProms.push(updateContainerPermissions({
-											name: containerSLA.localContainerName,
-											route: {target:datasourceEndpoint.hostname, path: '/sub/' + datasourceName + '/*' , method:'GET'}
-										}));
+					name: containerSLA.localContainerName,
+					route: {target: datasourceEndpoint.hostname, path: '/sub/' + datasourceName + '/*', method: 'GET'}
+				}));
+			}
 		}
 
 		Promise.all(readProms)
