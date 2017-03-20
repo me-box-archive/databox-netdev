@@ -101,12 +101,12 @@ module.exports = {
 		});
 
 		app.get('/ui/:containerName', (req, res) => {
-			let containerName = req.params.containerName;
+			const containerName = req.params.containerName;
 			conman.listContainers()
 				.then((containers) => {
 					return new Promise((resolve, reject) => {
-						for (let container of containers) {
-							let name = container.Names[0].substr(1);
+						for (const container of containers) {
+							const name = container.Names[0].substr(1);
 							if (name == containerName) {
 								resolve({
 									name: name,
@@ -134,13 +134,13 @@ module.exports = {
 		});
 
 		app.get('/list-apps', (req, res) => {
-			let names = [];
-			let result = [];
+			const names = [];
+			const result = [];
 
 			conman.listContainers()
 				.then((containers) => {
-					for (let container of containers) {
-						let name = container.Names[0].substr(1);
+					for (const container of containers) {
+						const name = container.Names[0].substr(1);
 						names.push(name);
 						result.push({
 							name: name,
@@ -150,7 +150,7 @@ module.exports = {
 						});
 					}
 
-					for (let installingApp in installingApps) {
+					for (const installingApp in installingApps) {
 						if (names.indexOf(installingApp) === -1) {
 							names.push(installingApp);
 							result.push({
@@ -158,10 +158,12 @@ module.exports = {
 								type: installingApps[installingApp],
 								status: 'installing'
 							});
+						} else {
+							delete installingApps[installingApp];
 						}
 					}
 
-					let options = {'url': '', 'method': 'GET'};
+					const options = {'url': '', 'method': 'GET'};
 					if (DATABOX_DEV == 1) {
 						options.url = "http://" + Config.localAppStoreName + ":8181" + '/app/list';
 					} else {
@@ -181,7 +183,7 @@ module.exports = {
 					});
 				})
 				.then((apps) => {
-					for (let app of apps) {
+					for (const app of apps) {
 						if (names.indexOf(app.manifest.name) === -1) {
 							names.push(app.manifest.name);
 							result.push({
@@ -253,7 +255,6 @@ module.exports = {
 						name = info.Name.substring(1);
 					}
 					console.log('[' + name + '] Uninstalled');
-					delete installingApps[name];
 					delete this.proxies[name];
 					res.json(info);
 				})
