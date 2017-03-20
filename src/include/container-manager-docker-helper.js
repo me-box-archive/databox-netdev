@@ -39,9 +39,29 @@ exports.remove = function (id) {
   });
 }
 
+var nextBytes = function() {
+  var count = 10;
+  return () => {
+    ++count;
+    let least = count & 0xFF;
+    let most  = (count & 0xFF00) >> 8;
+    return most + '.' + least;
+  };
+}();
+
 exports.createNetwork = function(name) {
   return new Promise( (resolve, reject) =>  {
-    docker.createNetwork({Name:name,Driver:'bridge'}, (err,data) => {
+    let bytes = nextBytes();
+    docker.createNetwork({
+        Name: name,
+        Driver: 'bridge',
+        IPAM: {
+          Config: [{
+            Subnet: '10.' + bytes + '.0/24',
+            Gateway: '10.' + bytes + '.1'
+          }]
+        }
+      }, (err,data) => {
       if(err) {
         reject("[createNetwork] Can't list networks");
         return;
@@ -73,7 +93,17 @@ var getNetwork = function(networks, name) {
           }
       }
 
-      docker.createNetwork({'Name': name, 'Driver': 'bridge'}, (err,data) => {
+      let bytes = nextBytes();
+      docker.createNetwork({
+        Name: name,
+        Driver: 'bridge',
+        IPAM: {
+          Config: [{
+            Subnet: '10.' + bytes + '.0/24',
+            Gateway: '10.' + bytes + '.1'
+          }]
+        }
+      }, (err,data) => {
         if(err) reject("[getNetwork] Can't create network" + err);
         resolve(data);
       })
