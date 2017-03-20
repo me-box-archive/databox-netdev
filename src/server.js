@@ -211,7 +211,6 @@ module.exports = {
 				.then((containers) => {
 					console.log('[' + sla.name + '] Installed');
 					for (const container of containers) {
-
 						delete installingApps[sla.name];
 						this.proxies[container.name] = container.name + ':' + container.port;
 					}
@@ -220,6 +219,9 @@ module.exports = {
 				})
 				.then(() => {
 					return conman.saveSLA(sla);
+				})
+				.catch(() => {
+					delete installingApps[sla.name];
 				});
 		});
 
@@ -247,6 +249,7 @@ module.exports = {
 			//console.log("Uninstalling " + req.body.id);
 			conman.getContainer(req.body.id)
 				.then((container) => {
+					console.log(JSON.stringify(container));
 					return conman.stopContainer(container);
 				})
 				.then((container) => {
@@ -269,31 +272,14 @@ module.exports = {
 
 		io.on('connection', (socket) => {
 			const emitter = conman.getDockerEmitter();
-
-			emitter.on("connect", () => {
-				socket.emit('docker-connect');
-			});
-			emitter.on("disconnect", () => {
-				socket.emit('docker-disconnect');
-			});
-			emitter.on("_message", (message) => {
-				socket.emit('docker-_message', message);
-			});
-			emitter.on("create", (message) => {
-				socket.emit('docker-create', message);
-			});
-			emitter.on("start", (message) => {
-				socket.emit('docker-star', message);
-			});
-			emitter.on("start", (message) => {
-				socket.emit('docker-stop', message);
-			});
-			emitter.on("die", (message) => {
-				socket.emit('docker-die', message);
-			});
-			emitter.on("destroy", (message) => {
-				socket.emit('docker-destroy', message);
-			});
+			emitter.on("connect", () => socket.emit('docker-connect'));
+			emitter.on("disconnect", () => socket.emit('docker-disconnect'));
+			emitter.on("_message", (message) => socket.emit('docker-_message', message));
+			emitter.on("create", (message) => socket.emit('docker-create', message));
+			emitter.on("start", (message) => socket.emit('docker-star', message));
+			emitter.on("start", (message) => socket.emit('docker-stop', message));
+			emitter.on("die", (message) => socket.emit('docker-die', message));
+			emitter.on("destroy", (message) => socket.emit('docker-destroy', message));
 			emitter.start();
 
 		});
