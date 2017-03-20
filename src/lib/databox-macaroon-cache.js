@@ -65,6 +65,7 @@ function getMacaroon(host,path, method) {
  * @return void
  */
 function invalidateMacaroon(host,path,method) {
+    console.log("[invalidateMacaroon]",host,path,method);
     macaroonCache[host+path+method] = null;
 }
 

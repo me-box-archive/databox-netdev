@@ -11,7 +11,7 @@ var containerMangerUIServer = null;
 
 httpsHelper.init()
 	.then(cert => {
-		
+
 		//Put the CA pubic key into this processes env var so libs that work in containers also work in the CM
 		process.env['CM_HTTPS_CA_ROOT_CERT'] = httpsHelper.getRootCert();
 
@@ -19,21 +19,13 @@ httpsHelper.init()
 		return conman.connect();
 	})
 	
-	.then(data => {
-		return conman.killAll(data);
-	})
+	.then(data => conman.killAll(data))
 
-	.then(() => {
-		return conman.initNetworks();
-	})
+	.then(() => conman.initNetworks())
 
 	// Connect self to CM-Arbiter network
-	.then(() => {
-		return conman.getOwnContainer();
-	})
-	.then((containerManagerContainer) => {
-		return conman.connectToCMArbiterNetwork(containerManagerContainer);
-	})
+	.then(() => conman.getOwnContainer())
+	.then((containerManagerContainer) => conman.connectToCMArbiterNetwork(containerManagerContainer))
 	.then(() => {
 		if(DATABOX_DEV) {
 			const devSeedScript = './updateLocalRegistry.sh';
@@ -87,7 +79,7 @@ httpsHelper.init()
 
 	.then(()=>{
 		//launch databox components 
-		var proms = [conman.launchLogStore(),conman.launchExportService()];
+		var proms = [conman.launchLogStore(), conman.launchExportService()];
 		return Promise.all(proms);
 	})
 	
