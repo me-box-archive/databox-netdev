@@ -56,57 +56,40 @@ exports.getDockerEmitter = function () {
 	return dockerHelper.getDockerEmitter();
 };
 
-var listContainers = function () {
-	return new Promise((resolve, reject) => {
-		docker.listContainers({all: true, filters: {"label": ["databox.type"]}},
-			(err, containers) => {
-				if (err) {
-					reject(err);
-					return;
-				}
-				resolve(containers);
-			}
-		);
-
-	});
+const listContainers = function () {
+	return docker.listContainers({all: true, filters: {"label": ["databox.type"]}});
 };
 exports.listContainers = listContainers;
 
-var getOwnContainer = function () {
+const getOwnContainer = function () {
 	return new Promise((resolve, reject) => {
-		docker.listContainers({all: true, filters: {"label": ["databox.type=container-manager"]}},
-			(err, containers) => {
-				if (err) {
-					reject(err);
-					return;
-				}
-				containers = containers.filter((cont)=>{ return cont.State === 'running'; });
-				console.log(containers)
+		docker.listContainers({all: true, filters: {"label": ["databox.type=container-manager"]}})
+			.then((containers) => {
+				containers = containers.filter((cont) => {
+					return cont.State === 'running';
+				});
+				console.log(containers);
 				if (containers.length !== 1) {
 					reject("More than one Container Manager running!");
 					return;
 				}
 				getContainer(containers[0].Id)
 					.then((container) => resolve(container))
-					.catch((err)=>{
+					.catch((err) => {
 						reject(err);
 					});
-			}
-		);
+			});
 	});
 };
 exports.getOwnContainer = getOwnContainer;
 
 exports.connectToCMArbiterNetwork = function (container) {
-
-	let proms = [
+	return Promise.all([
 		dockerHelper.connectToNetwork(container, 'databox-cm-arbiter-net'),
 		dockerHelper.connectToNetwork(container, 'databox-cloud-net'),
 		//dockerHelper.connectToNetwork(container, 'databox-driver-net'),
 		//dockerHelper.connectToNetwork(container, 'databox-app-net')
-	];
-
-	return Promise.all(proms);
+	]);
 };
 
 exports.killAll = function () {
@@ -114,9 +97,9 @@ exports.killAll = function () {
 		listContainers()
 			.then(containers => {
 				ids = [];
-				for (var container of containers) {
+				for (const container of containers) {
 					if(container.Labels['databox.type'] != 'container-manager') {
-						var name = repoTagToName(container.Image);
+						const name = repoTagToName(container.Image);
 						console.log('[' + name + '] Uninstalling');
 						ids.push(dockerHelper.kill(container.Id));
 						ids.push(dockerHelper.remove(container.Id));
@@ -278,7 +261,6 @@ exports.stopContainer = function (cont) {
 };
 
 exports.removeContainer = function (cont) {
-
 	return new Promise((resolve, reject) => {
 		dockerHelper.inspectContainer(cont)
 			.then((info) => {
@@ -288,7 +270,7 @@ exports.removeContainer = function (cont) {
 						reject(err);
 						return;
 					}
-					var name = repoTagToName(info.Name);
+					const name = repoTagToName(info.Name);
 					//console.log("removed " + name + "!");
 					//console.log("[SLA] Delete " + name);
 					resolve(info);
@@ -302,32 +284,52 @@ exports.removeContainer = function (cont) {
 	});
 };
 
-var connectContainerPair = 	function (con0, con1) {
-	
+const connectContainerPair = function (con0, con1) {
 	return new Promise((resolve, reject) => {
-		var dedicatedNet;
-		dockerHelper.listNetworks()
+		let dedicatedNet;
+		docker.listNetworks()
 			.then((nets) => {
-				let names = [con0 + '-' +  con1, con1 + '-' + con0];
-				var existed = nets.filter((v) => { return names.includes(v); });
+				let names = [con0 + '-' + con1, con1 + '-' + con0];
+				const existed = nets.filter((v) => {
+					return names.includes(v.Name);
+				});
 
-				if (existed.length > 0) {
-					return dockerHelper.getNetwork(nets,existed[0].Id);
-				} else {
-					return dockerHelper.getNetwork(nets,names[0]);
+				if (existed > 0) {
+					console.log("Using existing network " + existed[0].Name);
+					return docker.getNetwork(existed[0].Id)
+				}
+				else {
+					console.log("Creating network " + names[0]);
+					return docker.createNetwork({'Name': names[0], 'Driver': 'bridge'})
 				}
 			})
 			.then((net) => {
 				dedicatedNet = net;
-				let proms = [getContainerByName(con0), getContainerByName(con1)];
-				return Promise.all(proms);
+				console.log(JSON.stringify(dedicatedNet));
+				return Promise.all([
+					getContainerByName(con0),
+					getContainerByName(con1)]
+				);
 			})
 			.then((pair) => {
-				let proms = [
-					dedicatedNet.connect({'Container':pair[0].id},(err,data)=>{ if(err){reject(err);}else{resolve(data);}}),
-					dedicatedNet.connect({'Container':pair[1].id},(err,data)=>{ if(err){reject(err);}else{resolve(data);}})
-				];
-				return Promise.all(proms);
+				console.log("Adding " + pair[0].id + " to network");
+				console.log("Adding " + pair[1].id + " to network");
+				return Promise.all([
+					dedicatedNet.connect({'Container': pair[0].id}, (err, data) => {
+						if (err) {
+							console.log(err);
+						} else {
+							resolve(data);
+						}
+					}),
+					dedicatedNet.connect({'Container': pair[1].id}, (err, data) => {
+						if (err) {
+							console.log(err);
+						} else {
+							resolve(data);
+						}
+					})
+				]);
 			})
 			.catch((err) => {
 				console.log('[ERROR connectContainerPair]: ' + con0 + ' <> ' + con1, err);
@@ -889,7 +891,7 @@ let launchContainer = function (containerSLA) {
 				let datasourceName = allowedDatasource.datasource;
 
 				var isActuator = allowedDatasource.hypercat['item-metadata'].findIndex((itm)=>{return (itm.rel === 'urn:X-databox:rels:isActuator') && (itm.val === true) ; });
-			
+
 				if(isActuator !== -1) {
 					//its an actuator we need write access
 					readProms.push(updateContainerPermissions({
@@ -979,7 +981,7 @@ let launchContainer = function (containerSLA) {
 					config.Binds = binds;
 				}
 				proms = [];
-				
+
 				if ('datasources' in containerSLA) {
 					for (let datasource of containerSLA.datasources) {
 						config.Env.push("DATASOURCE_" + datasource.clientid + "=" + JSON.stringify(datasource.hypercat));
@@ -1025,7 +1027,7 @@ let launchContainer = function (containerSLA) {
 					};
 					proms.push(containerSLA.datasources.map(connectDatasource));
 				}
-				
+
 				proms.push(Promise.resolve(results[results.length - 1]));
 
 				return Promise.all(proms);
@@ -1034,15 +1036,13 @@ let launchContainer = function (containerSLA) {
 				return startContainer(results[results.length - 1]);
 			})
 			.then((container) => {
-			        proms = [];
-
 				launched.push(container);
 				console.log('[' + containerSLA.localContainerName + '] Passing token to Arbiter');
-				var update = {name: containerSLA.localContainerName, key: arbiterToken, type: container.type};
-			        proms.push(updateArbiter(update));
-
-			        proms.push(dockerHelper.disconnect(container, 'bridge'));
-			        return Promise.all(proms);
+				const update = {name: containerSLA.localContainerName, key: arbiterToken, type: container.type};
+				return Promise.all([
+					updateArbiter(update),
+					dockerHelper.disconnectFromNetwork(container, 'bridge')
+				]);
 			})
 			.then(() => {
 
@@ -1053,16 +1053,8 @@ let launchContainer = function (containerSLA) {
 					if(containerSLA.localContainerName != store.name) {
 
 						console.log('[Adding networks] for ' + store.name);
-						connectContainerPair(containerSLA.localContainerName, store.name)
-						.catch((err)=>{
-							console.log("[ERROR Adding network " + containerSLA.localContainerName + "] " + store.name + ' ' + err);
-							reject(err);
-						});
-						connectContainerPair(store.name, DATABOX_LOGSTORE_NAME)
-						.catch((err)=>{
-							console.log("[ERROR Adding network " + containerSLA.localContainerName + "] " + store.name + ' ' + err);
-							reject(err);
-						});
+						connectContainerPair(containerSLA.localContainerName, store.name);
+						connectContainerPair(store.name, DATABOX_LOGSTORE_NAME);
 
 						//Read /cat for CM
 						console.log('[Adding read permissions] for databox-container-manager on ' + store.name + '/cat');
