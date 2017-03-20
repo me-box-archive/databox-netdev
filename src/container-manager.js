@@ -266,39 +266,46 @@ exports.stopContainer = function (cont) {
 };
 
 exports.removeContainer = function (cont) {
-	let containerInfo = null;
-	let name = null;
-	return dockerHelper.inspectContainer(cont)
-		.then((info) => {
-			containerInfo = info;
-			name = repoTagToName(containerInfo.Name);
-			return cont.remove({force: true});
-		})
-		.then(() => db.deleteSLA(name, false))
-		.then(() => revokeContainerPermissions({'name': name}))
-		.then(() => docker.listNetworks())
-		.then((networks) => {
-			const appNetworks = networks.filter((v) => {
-				return v.Name.includes(name);
-			});
+	return new Promise((resolve, reject) => {
+		let containerInfo = null;
+		let name = null;
+		dockerHelper.inspectContainer(cont)
+			.then((info) => {
+				containerInfo = info;
+				name = repoTagToName(containerInfo.Name);
+				return cont.remove({force: true});
+			})
+			.then(() => db.deleteSLA(name, false))
+			.then(() => revokeContainerPermissions({'name': name}))
+			.then(() => docker.listNetworks())
+			.then((networks) => {
+				const appNetworks = networks.filter((v) => {
+					return v.Name.includes(name);
+				});
 
-			const proms = [];
-			for (const network of appNetworks) {
-				console.log("Removing " + network.Name);
-				proms.push(docker.getNetwork(network.Id).remove());
-			}
+				const proms = [];
+				for (const network of appNetworks) {
+					console.log("Removing " + network.Name);
+					proms.push(new Promise(() => {
+						const net = docker.getNetwork(network.Id);
+						net.inspect()
+							.then((networkInfo) => {
+								const promises = [];
+								for(const container in networkInfo.Containers) {
+									promises.push(net.disconnect({ 'Container': container, 'Force': true }));
+								}
+								return Promise.all(promises);
+							})
+							.then(() => net.remove())
+							.catch((err) => console.log(err));
+					}));
+				}
 
-			return Promise.all(proms);
-		})
-		.then((networks) => {
-			const proms = [];
-			for(const network of networks) {
-				proms.push(network.remove());
-			}
-
-			return Promise.all(proms);
-		})
-		.then(resolve(containerInfo));
+				return Promise.all(proms);
+			})
+			.then(() => resolve(containerInfo))
+			.catch((err) => reject(err));
+	});
 };
 
 const connectContainerPair = function (con0, con1) {

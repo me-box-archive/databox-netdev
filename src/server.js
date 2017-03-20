@@ -221,6 +221,7 @@ module.exports = {
 					return conman.saveSLA(sla);
 				})
 				.catch(() => {
+					console.log("Install failed");
 					delete installingApps[sla.name];
 				});
 		});
@@ -228,12 +229,8 @@ module.exports = {
 		app.post('/restart', (req, res) => {
 			//console.log("Restarting " + req.body.id);
 			conman.getContainer(req.body.id)
-				.then((container) => {
-					return conman.stopContainer(container);
-				})
-				.then((container) => {
-					return conman.startContainer(container);
-				})
+				.then((container) => conman.stopContainer(container))
+				.then((container) => conman.startContainer(container))
 				.then((container) => {
 					console.log('[' + container.name + '] Restarted');
 					this.proxies[container.name] = container.name + ':' + container.port;
@@ -248,19 +245,15 @@ module.exports = {
 		app.post('/uninstall', (req, res) => {
 			//console.log("Uninstalling " + req.body.id);
 			conman.getContainer(req.body.id)
-				.then((container) => {
-					console.log(JSON.stringify(container));
-					return conman.stopContainer(container);
-				})
-				.then((container) => {
-					return conman.removeContainer(container);
-				})
+				.then((container) => conman.stopContainer(container))
+				.then((container) => conman.removeContainer(container))
 				.then((info) => {
 					let name = info.Name;
 					if (info.Name.startsWith('/')) {
 						name = info.Name.substring(1);
 					}
 					console.log('[' + name + '] Uninstalled');
+					delete installingApps[name];
 					delete this.proxies[name];
 					res.json(info);
 				})
