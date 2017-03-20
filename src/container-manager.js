@@ -313,21 +313,22 @@ const connectContainerPair = function (con0, con1) {
 		let dedicatedNet;
 		docker.listNetworks()
 			.then((nets) => {
-				let names = [con0 + '-' + con1, con1 + '-' + con0];
+				let names = [con0 + '--' + con1, con1 + '--' + con0];
 				const existed = nets.filter((v) => {
 					return names.includes(v.Name);
 				});
 
-				if (existed > 0) {
-					console.log("Using existing network " + existed[0].Name);
-					return docker.getNetwork(existed[0].Id)
+				if (existed.length > 0) {
+					console.log('Connection already exists', existed[0].Name);
+					return Promise.resolve();
 				}
 				else {
 					console.log("Creating network " + names[0]);
-					return docker.createNetwork({'Name': names[0], 'Driver': 'bridge'})
+					return dockerHelper.getNetwork(nets, names[0]);
 				}
 			})
 			.then((net) => {
+				if (!net) return Promise.resolve();
 				dedicatedNet = net;
 				return Promise.all([
 					getContainerByName(con0),
@@ -335,6 +336,7 @@ const connectContainerPair = function (con0, con1) {
 				);
 			})
 			.then((pair) => {
+				if (!pair) return Promise.resolve();
 				return Promise.all([
 					dedicatedNet.connect({'Container': pair[0].id}, (err, data) => {
 						if (err) {
