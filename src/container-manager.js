@@ -93,28 +93,33 @@ exports.connectToCMArbiterNetwork = function (container) {
 };
 
 exports.killAll = function () {
-	return new Promise((resolve, reject) => {
-		listContainers()
-			.then(containers => {
-				ids = [];
-				for (const container of containers) {
-					if(container.Labels['databox.type'] != 'container-manager') {
-						const name = repoTagToName(container.Image);
-						console.log('[' + name + '] Uninstalling');
-						ids.push(dockerHelper.kill(container.Id));
-						ids.push(dockerHelper.remove(container.Id));
-					}
+	return listContainers()
+		.then(containers => {
+			ids = [];
+			for (const container of containers) {
+				if (container.Labels['databox.type'] != 'container-manager') {
+					const name = repoTagToName(container.Image);
+					console.log('[' + name + '] Uninstalling');
+					ids.push(dockerHelper.kill(container.Id));
+					ids.push(dockerHelper.remove(container.Id));
 				}
-				return Promise.all(ids);
-			})
-			.then((data) => {
-				resolve();
-			})
-			.catch(err => {
-				console.log("[killAll-2]" + err);
-				reject(err);
+			}
+			return Promise.all(ids);
+		})
+		.then(() => docker.listNetworks())
+		.then((networks) => {
+			const appNetworks = networks.filter((v) => {
+				return v.Name.includes("databox");
 			});
-	});
+
+			const proms = [];
+			for (const network of appNetworks) {
+				console.log("Removing " + network.Name);
+				proms.push(docker.getNetwork(network.Id).remove());
+			}
+
+			return Promise.all(proms);
+		})
 };
 
 var getContainer = function (id) {
@@ -261,27 +266,39 @@ exports.stopContainer = function (cont) {
 };
 
 exports.removeContainer = function (cont) {
-	return new Promise((resolve, reject) => {
-		dockerHelper.inspectContainer(cont)
-			.then((info) => {
-				cont.remove({force: true}, (err, data) => {
-					if (err) {
-						console.log("[remove]" + err);
-						reject(err);
-						return;
-					}
-					const name = repoTagToName(info.Name);
-					//console.log("removed " + name + "!");
-					//console.log("[SLA] Delete " + name);
-					resolve(info);
-					db.deleteSLA(name, false)
-						.then(resolve(info))
-						.catch((err) => reject(err));
-
-					revokeContainerPermissions({'name': name});
-				});
+	let containerInfo = null;
+	let name = null;
+	return dockerHelper.inspectContainer(cont)
+		.then((info) => {
+			containerInfo = info;
+			name = repoTagToName(containerInfo.Name);
+			return cont.remove({force: true});
+		})
+		.then(() => db.deleteSLA(name, false))
+		.then(() => revokeContainerPermissions({'name': name}))
+		.then(() => docker.listNetworks())
+		.then((networks) => {
+			const appNetworks = networks.filter((v) => {
+				return v.Name.includes(name);
 			});
-	});
+
+			const proms = [];
+			for (const network of appNetworks) {
+				console.log("Removing " + network.Name);
+				proms.push(docker.getNetwork(network.Id).remove());
+			}
+
+			return Promise.all(proms);
+		})
+		.then((networks) => {
+			const proms = [];
+			for(const network of networks) {
+				proms.push(network.remove());
+			}
+
+			return Promise.all(proms);
+		})
+		.then(resolve(containerInfo));
 };
 
 const connectContainerPair = function (con0, con1) {
@@ -305,15 +322,12 @@ const connectContainerPair = function (con0, con1) {
 			})
 			.then((net) => {
 				dedicatedNet = net;
-				console.log(JSON.stringify(dedicatedNet));
 				return Promise.all([
 					getContainerByName(con0),
 					getContainerByName(con1)]
 				);
 			})
 			.then((pair) => {
-				console.log("Adding " + pair[0].id + " to network");
-				console.log("Adding " + pair[1].id + " to network");
 				return Promise.all([
 					dedicatedNet.connect({'Container': pair[0].id}, (err, data) => {
 						if (err) {
@@ -811,9 +825,7 @@ var launchDependencies = function (containerSLA) {
 		//look for running container
 		promises.push(new Promise((resolve, reject) => {
 			getContainer(requiredName)
-				.then((cont) => {
-					return getContainerInfo(cont);
-				})
+				.then((cont) => getContainerInfo(cont))
 				.then((info) => {
 					console.log('[' + requiredName + "] Linking to existing " + requiredType + " " + requiredName);
 					info.name = requiredName;
@@ -1004,7 +1016,7 @@ let launchContainer = function (containerSLA) {
 				}
 
 				// TODO: Separate from other promises
- 				proms.push(dockerHelper.createContainer(config));
+ 				proms.push(docker.createContainer(config));
  				return Promise.all(proms);
 			})
 			.then((results) => {
